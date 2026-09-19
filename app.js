@@ -23,7 +23,7 @@ const exaggerated = prop => ['interpolate', ['linear'], ['zoom'],
   14, ['*', ['get', prop], 1.6],
   16, ['*', ['get', prop], 1]];
 
-const fmt = n => n.toLocaleString('en-US');
+const fmt = n => (Number.isFinite(n) ? n : 0).toLocaleString('en-US');
 const fmtC = n => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : fmt(Math.round(n));
 
 let DATA, LOTS, map, scenario = 's5', selected = null, tourTimer = null;
