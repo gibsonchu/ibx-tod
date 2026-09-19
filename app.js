@@ -14,19 +14,19 @@ const TYPO_COLOR = {
   'Res Blend': '#2FA6A0', 'Varied Blend': '#8E7BE8'
 };
 const WALKSHED_M = 804.672;          // half a mile
-const COL_R = 255, GHOST_R = 255;    // metres
-const MAX_COL_H = 2050;              // metres for the tallest whole column at zoom 13
-// extrusion heights are real metres, so they shrink as you zoom out. Halving the multiplier
-// per zoom level keeps a column the same height on screen from the whole corridor down to a block.
-// a ["zoom"] expression has to be the outermost one, so the multiplier is folded into each stop
-const zoomScaled = prop => ['interpolate', ['exponential', 0.5], ['zoom'],
-  9, ['*', ['get', prop], 16],
-  17, ['*', ['get', prop], 0.0625]];
+// Buildings are real lots at real heights. Zoomed out they would be sub-pixel slivers, so heights
+// are exaggerated at low zoom and ease back to true scale by street level. ["zoom"] has to be the
+// outermost expression, so the multiplier is folded into each stop.
+const exaggerated = prop => ['interpolate', ['linear'], ['zoom'],
+  10, ['*', ['get', prop], 9],
+  12, ['*', ['get', prop], 4],
+  14, ['*', ['get', prop], 1.6],
+  16, ['*', ['get', prop], 1]];
 
 const fmt = n => n.toLocaleString('en-US');
 const fmtC = n => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : fmt(Math.round(n));
 
-let DATA, map, scenario = 's5', selected = null, tourTimer = null;
+let DATA, LOTS, map, scenario = 's5', selected = null, tourTimer = null;
 
 /* ── geometry helpers ─────────────────────────────────── */
 const M_PER_DEG_LAT = 110574;
@@ -47,14 +47,11 @@ function metresBetween(a, b) {
 
 /* ── boot ─────────────────────────────────────────────── */
 (async function init() {
-  DATA = await (await fetch('data/ibx.json')).json();
-
-  // one shared height scale so scenarios stay comparable with each other and with today
-  let peak = 0;
-  DATA.stations.forEach(s => {
-    peak = Math.max(peak, s.existingUnits + Math.max(...Object.values(s.scenarios)));
-  });
-  DATA.hScale = MAX_COL_H / peak;
+  const [d, l] = await Promise.all([
+    fetch('data/ibx.json').then(r => r.json()),
+    fetch('data/lots.json').then(r => r.json())
+  ]);
+  DATA = d; LOTS = decodeLots(l, d.stations);
 
   buildMap();
   buildScenarioUI();
@@ -121,35 +118,56 @@ function walkshedFC() {
   };
 }
 
-/* one feature per stacked slice, plus a wide translucent "homes today" cylinder */
-function columnFC() {
-  const f = [], hs = DATA.hScale;
-  DATA.stations.forEach(s => {
-    let base = s.existingUnits * hs;          // the new homes sit on top of the homes already there
-    CAT_KEYS.forEach(k => {
-      const u = s.breakdown[scenario][k];
-      if (u <= 0) return;
-      const h = u * hs;
-      f.push({
-        type: 'Feature',
-        properties: { id: s.id, name: s.name, cat: k, units: u, color: CAT[k].color, base, height: base + h },
-        geometry: { type: 'Polygon', coordinates: circle(s.lon, s.lat, COL_R) }
-      });
-      base += h;
+/* lots.json stores each lot outline as delta-encoded integer metres-ish offsets from one origin */
+function decodeLots(l, stations) {
+  const rings = l.g.map(flat => {
+    let x = flat[0], y = flat[1];
+    const ring = [[l.o[0] + x / l.q, l.o[1] + y / l.q]];
+    for (let i = 2; i < flat.length; i += 2) {
+      x += flat[i]; y += flat[i + 1];
+      ring.push([l.o[0] + x / l.q, l.o[1] + y / l.q]);
+    }
+    ring.push(ring[0]);
+    return ring;
+  });
+  // nearest station per lot, so clicking a building opens its station
+  const near = rings.map(r => {
+    let best = 0, bd = Infinity;
+    stations.forEach((s, i) => {
+      const d = metresBetween(r[0], [s.lon, s.lat]);
+      if (d < bd) { bd = d; best = i; }
+    });
+    return best;
+  });
+  return { ...l, rings, near };
+}
+
+/* grey: every tax lot with homes today, at its real floor count */
+function homesFC() {
+  const f = [];
+  LOTS.rings.forEach((ring, i) => {
+    if (LOTS.u[i] <= 0) return;
+    f.push({
+      type: 'Feature', id: i,
+      properties: { i, h: LOTS.h[i] },
+      geometry: { type: 'Polygon', coordinates: [ring] }
     });
   });
   return { type: 'FeatureCollection', features: f };
 }
-function ghostFC() {
+
+/* coloured: the new homes this scenario puts on each lot, stacked on whatever homes are there now */
+function newFC() {
   return {
     type: 'FeatureCollection',
-    features: DATA.stations.map(s => ({
-      type: 'Feature',
-      properties: { id: s.id, name: s.name, height: s.existingUnits * DATA.hScale },
-      geometry: { type: 'Polygon', coordinates: circle(s.lon, s.lat, GHOST_R) }
+    features: LOTS.s[scenario].map(([i, c, n, hm]) => ({
+      type: 'Feature', id: i,
+      properties: { i, n, cat: CAT_KEYS[c], color: CAT[CAT_KEYS[c]].color, base: LOTS.h[i], top: LOTS.h[i] + hm },
+      geometry: { type: 'Polygon', coordinates: [LOTS.rings[i]] }
     }))
   };
 }
+
 function stationFC() {
   return {
     type: 'FeatureCollection',
@@ -167,8 +185,9 @@ function addLayers() {
     type: 'geojson',
     data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: DATA.route } }
   });
-  map.addSource('ghost', { type: 'geojson', data: ghostFC() });
-  map.addSource('cols', { type: 'geojson', data: columnFC() });
+  // tolerance 0 so geojson-vt doesn't drop small lots when simplifying at low zoom
+  map.addSource('homes', { type: 'geojson', data: homesFC(), tolerance: 0, maxzoom: 15 });
+  map.addSource('newhomes', { type: 'geojson', data: newFC(), tolerance: 0, maxzoom: 15 });
   map.addSource('stations', { type: 'geojson', data: stationFC() });
   map.addSource('you', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
@@ -201,22 +220,22 @@ function addLayers() {
   });
 
   map.addLayer({
-    id: 'ghost-ext', type: 'fill-extrusion', source: 'ghost',
+    id: 'homes-ext', type: 'fill-extrusion', source: 'homes',
     paint: {
-      'fill-extrusion-color': '#38405F',
-      'fill-extrusion-height': zoomScaled('height'),
+      'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'hover'], false], '#8F98B8', '#4A5270'],
+      'fill-extrusion-height': exaggerated('h'),
       'fill-extrusion-base': 0,
-      'fill-extrusion-opacity': 0.88,
+      'fill-extrusion-opacity': 0.92,
       'fill-extrusion-vertical-gradient': true
     }
   });
   map.addLayer({
-    id: 'col-ext', type: 'fill-extrusion', source: 'cols',
+    id: 'new-ext', type: 'fill-extrusion', source: 'newhomes',
     paint: {
-      'fill-extrusion-color': ['get', 'color'],
-      'fill-extrusion-height': zoomScaled('height'),
-      'fill-extrusion-base': zoomScaled('base'),
-      'fill-extrusion-opacity': 0.95,
+      'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'hover'], false], '#FFFFFF', ['get', 'color']],
+      'fill-extrusion-height': exaggerated('top'),
+      'fill-extrusion-base': exaggerated('base'),
+      'fill-extrusion-opacity': 0.97,
       'fill-extrusion-vertical-gradient': true
     }
   });
@@ -249,14 +268,34 @@ function addLayers() {
   });
 
   // interaction
-  const hits = ['col-ext', 'ghost-ext', 'station-dot', 'walkshed-fill'];
-  hits.forEach(l => {
+  ['station-dot', 'walkshed-fill'].forEach(l => {
     map.on('mouseenter', l, () => (map.getCanvas().style.cursor = 'pointer'));
-    map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; hideTip(); });
+    map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
     map.on('click', l, e => selectStation(e.features[0].properties.id, true));
   });
-  ['col-ext', 'ghost-ext', 'station-dot'].forEach(l => {
-    map.on('mousemove', l, e => showTip(e.point, e.features[0].properties.id));
+  map.on('mousemove', 'station-dot', e => showStationTip(e.point, e.features[0].properties.id));
+  map.on('mouseleave', 'station-dot', hideTip);
+
+  // buildings: hover for the lot, click to open its station
+  let hovered = null;
+  const unhover = () => {
+    if (hovered) map.setFeatureState({ source: hovered.src, id: hovered.id }, { hover: false });
+    hovered = null;
+  };
+  map.on('mousemove', e => {
+    const f = map.queryRenderedFeatures(e.point, { layers: ['new-ext', 'homes-ext'] })[0];
+    unhover();
+    if (!f) { if (!map.queryRenderedFeatures(e.point, { layers: ['station-dot'] }).length) hideTip(); map.getCanvas().style.cursor = ''; return; }
+    hovered = { src: f.source, id: f.id };
+    map.setFeatureState(hovered, { hover: true });
+    map.getCanvas().style.cursor = 'pointer';
+    showLotTip(e.point, f.properties.i, f.source === 'newhomes' ? f.properties : null);
+  });
+  map.on('mouseout', () => { unhover(); hideTip(); });
+  map.on('movestart', () => { unhover(); hideTip(); });
+  map.on('click', e => {
+    const f = map.queryRenderedFeatures(e.point, { layers: ['new-ext', 'homes-ext'] })[0];
+    if (f) selectStation(DATA.stations[LOTS.near[f.properties.i]].id, false);
   });
 
   refresh();
@@ -264,11 +303,22 @@ function addLayers() {
 }
 
 /* ── tooltip ──────────────────────────────────────────── */
-function showTip(pt, id) {
-  const s = DATA.stations.find(x => x.id === id); if (!s) return;
+function placeTip(pt, html) {
   const el = document.getElementById('tip');
-  el.innerHTML = `<b>${s.name}</b><em>+${fmt(s.scenarios[scenario])}</em> <span>new homes · ${fmt(s.existingUnits)} today</span>`;
+  el.innerHTML = html;
   el.style.left = pt.x + 'px'; el.style.top = pt.y + 'px'; el.hidden = false;
+}
+function showStationTip(pt, id) {
+  const s = DATA.stations.find(x => x.id === id); if (!s) return;
+  placeTip(pt, `<b>${s.name}</b><em>+${fmt(s.scenarios[scenario])}</em> <span>new homes · ${fmt(s.existingUnits)} today</span>`);
+}
+function showLotTip(pt, i, added) {
+  const today = LOTS.u[i];
+  const zone = LOTS.zones[LOTS.z[i]];
+  const lines = [`<b>${LOTS.a[i] || 'Tax lot'}</b>`];
+  if (added) lines.push(`<em style="color:${added.color}">+${fmt(added.n)} new home${added.n === 1 ? '' : 's'}</em> <span>on ${CAT[added.cat].label.toLowerCase()} land</span><br>`);
+  lines.push(`<span>${today ? fmt(today) + ' home' + (today === 1 ? '' : 's') + ' today' : 'No homes today'} · zoned ${zone}</span>`);
+  placeTip(pt, lines.join(''));
 }
 const hideTip = () => (document.getElementById('tip').hidden = true);
 
@@ -291,7 +341,7 @@ function setScenario(id) {
   if (id === scenario) return;
   scenario = id;
   document.querySelectorAll('.scen').forEach(b => b.classList.toggle('on', b.dataset.id === id));
-  map.getSource('cols').setData(columnFC());
+  map.getSource('newhomes').setData(newFC());
   map.getSource('stations').setData(stationFC());
   refresh();
   if (selected) renderDetail(selected);
@@ -325,7 +375,7 @@ function selectStation(id, fly) {
   document.getElementById('detail').hidden = false;
   if (fly) {
     stopTour();
-    map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 13.2), pitch: 58, duration: 900, offset: [-40, 60] });
+    map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 14.4), pitch: 60, duration: 1100, offset: [-40, 40] });
   }
 }
 const featIndex = id => DATA.stations.findIndex(s => s.id === id);
@@ -350,7 +400,7 @@ function renderDetail(id) {
     `${s.borough} · ${fmt(s.acres)} acres in the ½-mile walkshed`;
   document.getElementById('d-units').textContent = '+' + fmt(units);
   document.getElementById('d-hero-sub').innerHTML =
-    `under <strong>Scenario ${sc.n} · ${sc.name.replace(' — recommended', '')}</strong> — a <strong>${growth.toFixed(0)}%</strong> increase on the ${fmt(s.existingUnits)} homes here today.`;
+    `on <strong>${fmt((s.newLots || {})[scenario] || 0)} lots</strong> under <strong>Scenario ${sc.n} · ${sc.name.replace(' — recommended', '')}</strong> — a <strong>${growth.toFixed(0)}%</strong> increase on the ${fmt(s.existingUnits)} homes on ${fmt(s.residentialLots)} lots here today.`;
 
   const bd = s.breakdown[scenario];
   const bmax = Math.max(...Object.values(bd), 1);
@@ -481,7 +531,7 @@ function dropPin(coords, label) {
   const near = walksheds(coords);
   setYouSheds(near.map(x => featIndex(x.s.id)));
   map.easeTo({
-    center: coords, zoom: near.length ? 13.4 : 12.2, pitch: 58, duration: 1400, offset: [-40, 40]
+    center: coords, zoom: near.length ? 15.2 : 13.2, pitch: 60, duration: 1400, offset: [-40, 40]
   });
 }
 
@@ -490,6 +540,38 @@ function walksheds(coords) {
     .map(s => ({ s, d: metresBetween(coords, [s.lon, s.lat]) }))
     .filter(x => x.d <= WALKSHED_M)
     .sort((a, b) => a.d - b.d);
+}
+
+function lotAt(pt) {
+  const inside = ring => {
+    let c = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  // lot outlines are inset, so fall back to the nearest lot within ~25 m
+  let best = -1, bd = 25;
+  for (let i = 0; i < LOTS.rings.length; i++) {
+    const r = LOTS.rings[i];
+    if (Math.abs(r[0][1] - pt[1]) > 0.002 || Math.abs(r[0][0] - pt[0]) > 0.003) continue;
+    if (inside(r)) return i;
+    const d = metresBetween(pt, r[0]);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
+function lotLine(i) {
+  if (i < 0) return '';
+  const add = LOTS.s[scenario].find(r => r[0] === i);
+  const today = LOTS.u[i], zone = LOTS.zones[LOTS.z[i]];
+  const now = today ? `${fmt(today)} home${today === 1 ? '' : 's'} today` : 'no homes today';
+  const what = add
+    ? `this scenario builds <strong style="color:${CAT[CAT_KEYS[add[1]]].color}">+${fmt(add[2])}</strong> new homes here`
+    : 'this scenario doesn’t build on it';
+  return `<p class="you-lot"><b>Your lot</b> · zoned ${zone} · ${now}; ${what}.</p>`;
 }
 
 function renderYou(place) {
@@ -529,7 +611,8 @@ function renderYou(place) {
       </div>`;
     }).join('') +
     `<p class="you-none">Under <strong>Scenario ${sc.n}</strong>, the station areas you sit in are
-     allocated <strong>${fmt(total)}</strong> of the corridor's ${fmt(sc.units)} new homes.</p>`;
+     allocated <strong>${fmt(total)}</strong> of the corridor's ${fmt(sc.units)} new homes.</p>` +
+    lotLine(lotAt(place.coords));
 
   document.querySelectorAll('#you-body .walk-item').forEach(el =>
     (el.onclick = () => selectStation(el.dataset.id, true)));
@@ -588,7 +671,7 @@ function toggleTour() {
     const s = DATA.stations[i % DATA.stations.length];
     selectStation(s.id, false);
     map.easeTo({
-      center: [s.lon, s.lat], zoom: 13.6, pitch: 62,
+      center: [s.lon, s.lat], zoom: 14.6, pitch: 62,
       bearing: -14 + (i % 2 ? 22 : -8), duration: 2600, offset: [-30, 70]
     });
     i++;

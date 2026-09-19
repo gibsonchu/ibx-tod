@@ -141,16 +141,18 @@
 
 <!-- ── map chrome ────────────────────────────────────────── -->
 <div id="legend">
-  <div class="lg-row lg-title">New homes, by the land they come from</div>
+  <div class="lg-row lg-title">Every building is a real tax lot</div>
+  <div class="lg-row lg-ghost-row">
+    <span class="lg-ghost"><i></i>Homes there today, at real height</span>
+  </div>
+  <div class="lg-row lg-sub">New homes, by the zoning they're built on</div>
   <div class="lg-items">
     <span><i style="background:#C9822A"></i>Commercial</span>
     <span><i style="background:#F2B441"></i>Manufacturing</span>
     <span><i style="background:#49CFCF"></i>Low-density res.</span>
     <span><i style="background:#1F7E78"></i>High-density res.</span>
   </div>
-  <div class="lg-row lg-sep">
-    <span class="lg-ghost"><i></i>Grey base of each column = homes there today</span>
-  </div>
+  <div class="lg-note">Heights exaggerated when zoomed out</div>
 </div>
 
 <div id="controls">
@@ -170,22 +172,26 @@
     <h3>What comes straight from the report</h3>
     <p>Every station's <strong>land-use split</strong> (commercial / manufacturing / low-density residential / high-density residential), its <strong>total lot area</strong> inside the half-mile walkshed, its <strong>typology</strong>, and both <strong>scores</strong> — quick-win and equity opportunity — are transcribed from the study's own tables. So are the five scenarios and their corridor-wide totals: 42,666 · 83,529 · 64,113 · 100,200 · 83,059 new homes. Station points, the route alignment and the walkshed radius come from the study's GIS files.</p>
 
-    <h3>What this map derives</h3>
-    <p>The report publishes scenario totals for the <em>whole corridor</em>, not per station. This map splits each total across the 19 stations using the mechanism of the scenario itself: a station receives a share proportional to <strong>the land the scenario actually rezones there</strong> — its lot area multiplied by the share of that land in the categories the scenario touches.</p>
+    <h3>The buildings</h3>
+    <p><strong>Grey buildings are real.</strong> Each one is a tax lot from the study's PLUTO (24v4.1) walkshed layer that has homes on it today, drawn on its real lot outline at its real number of floors: 52,000+ lots holding 184,675 homes. Each station's “homes today” figure is counted from these lots. The report's corridor figure is 228,256; the difference is mostly homes counted once per station where walksheds overlap.</p>
+    <p><strong>Coloured buildings are where the scenario's new homes could go.</strong> For each station and zoning category, the new homes are placed on real lots of that category, most underbuilt first: the lots with the biggest gap between what's built and what the scenario's zoning would allow. They're drawn on top of any homes already on the lot. Heights come from the report's 880 sq ft average unit, spread over about 65% of the lot. Parks, public facilities and utility land are never built on. Which specific lots get picked is illustrative. The report doesn't choose sites, and neither does this map in any real sense.</p>
+
+    <h3>How many new homes each station gets</h3>
+    <p>The report publishes scenario totals for the <em>whole corridor</em>, not per station. This map splits each total across the 19 stations in proportion to <strong>the land that scenario actually rezones there</strong>: each station's lot area times the share of it in the categories the scenario touches.</p>
     <ul>
-      <li><strong>1 · Uniform</strong> — every category, weighted equally.</li>
-      <li><strong>2 · M &amp; C only</strong> — manufacturing + commercial land only.</li>
-      <li><strong>3 · Low-density</strong> — R1–R5 land only.</li>
-      <li><strong>4 · High-density</strong> — R6–R10 land only.</li>
-      <li><strong>5 · Hybrid</strong> — manufacturing and commercial carry most of the weight (0.80), with smaller contributions from low-density (0.15) and high-density (0.08) land, matching the report's description of aggressive M/C conversion alongside modest residential upzoning.</li>
+      <li><strong>1 · Uniform</strong>: every category, one zoning step up.</li>
+      <li><strong>2 · M &amp; C only</strong>: manufacturing to M1-4/R6A, commercial to C4-5D.</li>
+      <li><strong>3 · Low-density</strong>: R1–R5 to R6.</li>
+      <li><strong>4 · High-density</strong>: R6 to R8A.</li>
+      <li><strong>5 · Hybrid</strong>: manufacturing and commercial carry most of the weight (0.80), with smaller contributions from low-density (0.15) and high-density (0.08) land, matching the report's aggressive M/C conversion alongside modest residential upzoning (to R5 and R7).</li>
     </ul>
-    <p>Allocations are then rescaled so each scenario sums exactly to the report's published corridor total. <strong>Homes today</strong> — the outer ring on each column — splits the corridor's 228,256 existing units the same way, weighted toward high-density land.</p>
+    <p>Each scenario still sums to the report's published total. In a few station areas the scenario's zoning can't physically hold its share on eligible lots; there the extra homes are spread across the chosen lots, so those buildings run taller than that zoning would allow. At Utica Avenue the report counts high-density land, but no R6+ lot's centre falls inside the circle, so those homes go on the nearest R6+ lots just outside it.</p>
 
     <h3>Read it as a shape, not a forecast</h3>
-    <p>The report is explicit that maximum build-out figures "should be viewed with careful skepticism," and that neighbourhoods typically build about half of what zoning allows, over several years — Long Island City realised 53.6% of its zoned capacity over a decade. The per-station numbers here are an allocation of the study's corridor totals, not a site-by-site development forecast, and no one has been rezoned. Treat the columns as relative capacity, not as a promise about any particular block.</p>
+    <p>The report is explicit that maximum build-out figures "should be viewed with careful skepticism", and that neighbourhoods typically build about half of what zoning allows, over several years: Long Island City realised 53.6% of its zoned capacity over a decade. Nothing here has been rezoned, and no particular lot is being proposed for anything. Heights are exaggerated when zoomed out so the corridor stays readable; they reach true scale at street level.</p>
 
     <h3>One correction</h3>
-    <p>The report's lot-area table lists “Grand Avenue” twice; the second row is Roosevelt Avenue, the corridor's 19th station. Read that way, the column sums to the report's stated gross total of 327,885,403 sq ft exactly, so that is how it is used here.</p>
+    <p>The report's lot-area table lists “Grand Avenue” twice; the second row is Roosevelt Avenue, the corridor's 19th station. Read that way, the column sums to the report's stated gross total of 327,885,403 sq ft exactly, so that's how it's used here.</p>
 
     <h3>Data &amp; credits</h3>
     <p><strong>Housing and the Interborough Express: Tackling New York City's Housing Crisis One Stop at a Time</strong> — New York Building Congress and New York Building Foundation, 2025. Address search by <a href="https://geosearch.planninglabs.nyc" target="_blank" rel="noopener">NYC Planning GeoSearch</a>. Basemap © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>, © OpenStreetMap contributors.</p>
