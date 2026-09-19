@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>IBX Housing Explorer — Interborough Express</title>
+<meta name="description" content="A 3D map of projected housing capacity around the 19 proposed Interborough Express stations, based on the New York Building Congress 2025 IBX report.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- ── loading ───────────────────────────────────────────── -->
+<div id="boot">
+  <div class="boot-inner">
+    <div class="boot-mark">IBX</div>
+    <div class="boot-bar"><i></i></div>
+    <p>Building the corridor…</p>
+  </div>
+</div>
+
+<!-- ── left rail ─────────────────────────────────────────── -->
+<aside id="rail">
+  <header class="rail-head">
+    <div class="wordmark">
+      <span class="wm-badge">IBX</span>
+      <div>
+        <h1>Housing Explorer</h1>
+        <p>19 stations · 14 miles · Brooklyn ↔ Queens</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- address search -->
+  <section class="rail-sec" id="sec-search">
+    <label class="lbl" for="addr">Find your address</label>
+    <div class="search-wrap">
+      <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>
+      <input id="addr" type="text" autocomplete="off" spellcheck="false"
+             placeholder="e.g. 1000 Dean St, Brooklyn" aria-label="Search a New York City address">
+      <button id="addr-clear" class="addr-clear" hidden aria-label="Clear address">&times;</button>
+    </div>
+    <ul id="suggest" class="suggest" hidden role="listbox"></ul>
+    <p class="hint" id="search-hint">Any address in the five boroughs. We'll tell you which station walksheds you sit inside.</p>
+  </section>
+
+  <!-- your address result -->
+  <section class="rail-sec result-card" id="you" hidden>
+    <div class="you-head">
+      <span class="you-dot"></span>
+      <div>
+        <p class="you-addr" id="you-addr"></p>
+        <p class="you-sub" id="you-sub"></p>
+      </div>
+      <button id="you-close" class="x" aria-label="Clear result">&times;</button>
+    </div>
+    <div id="you-body"></div>
+  </section>
+
+  <!-- scenario picker -->
+  <section class="rail-sec">
+    <label class="lbl">Rezoning scenario</label>
+    <div id="scenarios" class="scenarios"></div>
+    <div class="scen-detail" id="scen-detail"></div>
+  </section>
+
+  <!-- corridor totals -->
+  <section class="rail-sec">
+    <label class="lbl">Corridor total</label>
+    <div class="totals" id="totals"></div>
+    <div class="target-bar" id="target-bar">
+      <div class="tb-track"><div class="tb-fill" id="tb-fill"></div><div class="tb-goal" id="tb-goal"></div></div>
+      <div class="tb-legend">
+        <span><i class="sw-new"></i> New homes this scenario</span>
+        <span class="tb-goal-lbl">Target 70,925</span>
+      </div>
+    </div>
+  </section>
+
+  <footer class="rail-foot">
+    <button id="open-method" class="ghost-btn">How these numbers are built</button>
+    <p class="src">Source: <strong>Housing and the Interborough Express</strong>, New York Building Congress &amp; New York Building Foundation, 2025. Station and route geometry from the study's own GIS.</p>
+  </footer>
+</aside>
+
+<!-- ── station detail ────────────────────────────────────── -->
+<aside id="detail" hidden>
+  <button id="detail-close" class="x big" aria-label="Close station">&times;</button>
+  <div class="d-head">
+    <span class="d-typ" id="d-typ"></span>
+    <h2 id="d-name"></h2>
+    <p id="d-boro"></p>
+  </div>
+
+  <div class="d-hero">
+    <div class="d-hero-main">
+      <span class="d-big" id="d-units"></span>
+      <span class="d-unit">new homes</span>
+    </div>
+    <p class="d-hero-sub" id="d-hero-sub"></p>
+  </div>
+
+  <div class="d-sec">
+    <h3>Where those homes come from</h3>
+    <div id="d-break" class="breakdown"></div>
+  </div>
+
+  <div class="d-sec">
+    <h3>Land inside the ½-mile walkshed</h3>
+    <div class="landbar" id="d-landbar"></div>
+    <div class="landkey" id="d-landkey"></div>
+    <p class="d-acres" id="d-acres"></p>
+  </div>
+
+  <div class="d-sec">
+    <h3>How the study ranked it</h3>
+    <div class="scores">
+      <div class="score">
+        <div class="score-top"><span>Quick-win</span><b id="d-q"></b></div>
+        <div class="score-track"><i id="d-qbar" class="q"></i></div>
+        <p id="d-qrank"></p>
+      </div>
+      <div class="score">
+        <div class="score-top"><span>Equity opportunity</span><b id="d-e"></b></div>
+        <div class="score-track"><i id="d-ebar" class="e"></i></div>
+        <p id="d-erank"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-sec">
+    <h3>Across all five scenarios</h3>
+    <div id="d-scen" class="scen-compare"></div>
+  </div>
+</aside>
+
+<!-- ── map chrome ────────────────────────────────────────── -->
+<div id="legend">
+  <div class="lg-row lg-title">New homes, by the land they come from</div>
+  <div class="lg-items">
+    <span><i style="background:#C9822A"></i>Commercial</span>
+    <span><i style="background:#F2B441"></i>Manufacturing</span>
+    <span><i style="background:#49CFCF"></i>Low-density res.</span>
+    <span><i style="background:#1F7E78"></i>High-density res.</span>
+  </div>
+  <div class="lg-row lg-sep">
+    <span class="lg-ghost"><i></i>Grey base of each column = homes there today</span>
+  </div>
+</div>
+
+<div id="controls">
+  <button class="mapbtn" id="btn-tilt" title="Toggle 3D / flat">3D</button>
+  <button class="mapbtn" id="btn-fit" title="Fit whole corridor">Fit route</button>
+  <button class="mapbtn" id="btn-tour" title="Fly the line">Fly the line</button>
+</div>
+
+<div id="tip" hidden></div>
+
+<!-- ── methodology ───────────────────────────────────────── -->
+<div id="method" hidden>
+  <div class="sheet">
+    <button id="method-close" class="x big" aria-label="Close">&times;</button>
+    <h2>How these numbers are built</h2>
+
+    <h3>What comes straight from the report</h3>
+    <p>Every station's <strong>land-use split</strong> (commercial / manufacturing / low-density residential / high-density residential), its <strong>total lot area</strong> inside the half-mile walkshed, its <strong>typology</strong>, and both <strong>scores</strong> — quick-win and equity opportunity — are transcribed from the study's own tables. So are the five scenarios and their corridor-wide totals: 42,666 · 83,529 · 64,113 · 100,200 · 83,059 new homes. Station points, the route alignment and the walkshed radius come from the study's GIS files.</p>
+
+    <h3>What this map derives</h3>
+    <p>The report publishes scenario totals for the <em>whole corridor</em>, not per station. This map splits each total across the 19 stations using the mechanism of the scenario itself: a station receives a share proportional to <strong>the land the scenario actually rezones there</strong> — its lot area multiplied by the share of that land in the categories the scenario touches.</p>
+    <ul>
+      <li><strong>1 · Uniform</strong> — every category, weighted equally.</li>
+      <li><strong>2 · M &amp; C only</strong> — manufacturing + commercial land only.</li>
+      <li><strong>3 · Low-density</strong> — R1–R5 land only.</li>
+      <li><strong>4 · High-density</strong> — R6–R10 land only.</li>
+      <li><strong>5 · Hybrid</strong> — manufacturing and commercial carry most of the weight (0.80), with smaller contributions from low-density (0.15) and high-density (0.08) land, matching the report's description of aggressive M/C conversion alongside modest residential upzoning.</li>
+    </ul>
+    <p>Allocations are then rescaled so each scenario sums exactly to the report's published corridor total. <strong>Homes today</strong> — the outer ring on each column — splits the corridor's 228,256 existing units the same way, weighted toward high-density land.</p>
+
+    <h3>Read it as a shape, not a forecast</h3>
+    <p>The report is explicit that maximum build-out figures "should be viewed with careful skepticism," and that neighbourhoods typically build about half of what zoning allows, over several years — Long Island City realised 53.6% of its zoned capacity over a decade. The per-station numbers here are an allocation of the study's corridor totals, not a site-by-site development forecast, and no one has been rezoned. Treat the columns as relative capacity, not as a promise about any particular block.</p>
+
+    <h3>One correction</h3>
+    <p>The report's lot-area table lists “Grand Avenue” twice; the second row is Roosevelt Avenue, the corridor's 19th station. Read that way, the column sums to the report's stated gross total of 327,885,403 sq ft exactly, so that is how it is used here.</p>
+
+    <h3>Data &amp; credits</h3>
+    <p><strong>Housing and the Interborough Express: Tackling New York City's Housing Crisis One Stop at a Time</strong> — New York Building Congress and New York Building Foundation, 2025. Address search by <a href="https://geosearch.planninglabs.nyc" target="_blank" rel="noopener">NYC Planning GeoSearch</a>. Basemap © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>, © OpenStreetMap contributors.</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
