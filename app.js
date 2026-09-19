@@ -82,6 +82,16 @@ function buildMap() {
   });
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
 
+  // MapLibre's own resize observer can miss a size change made while the tab is hidden or
+  // still opening, which leaves the canvas stuck at its first size — re-measure on these too
+  const fit = () => {
+    const c = map.getCanvas(), el = map.getContainer();
+    if (c.clientWidth !== el.clientWidth || c.clientHeight !== el.clientHeight) map.resize();
+  };
+  window.addEventListener('resize', fit);
+  document.addEventListener('visibilitychange', fit);
+  map.once('idle', fit);
+
   // 'load' waits on the basemap sprite/glyph fetches, which can hang on a slow CDN.
   // 'style.load' is enough to start adding our own sources and layers.
   let started = false;
@@ -250,7 +260,7 @@ function addLayers() {
   });
 
   refresh();
-  requestAnimationFrame(() => requestAnimationFrame(() => fitRoute(false)));
+  requestAnimationFrame(() => requestAnimationFrame(() => { map.resize(); fitRoute(false); }));
 }
 
 /* ── tooltip ──────────────────────────────────────────── */
